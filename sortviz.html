@@ -1,0 +1,1267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sorting Visualizer</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#0a0a0f; --surface:#12121a; --surface2:#1a1a26; --border:#2a2a3d;
+    --text:#e8e8f0; --muted:#6b6b8a; --accent:#7c6aff; --accent2:#ff6a9b;
+    --compare:#ffb347; --swap:#ff6a9b; --sorted:#6affcc; --normal:#7c6aff;
+    --pivot:#ff6aff; --merge-left:#6ab8ff; --merge-right:#ff9f6a;
+    --grid-line:rgba(124,106,255,0.03);
+  }
+  body.light {
+    --bg:#f4f4f8; --surface:#ffffff; --surface2:#eeeef5; --border:#d0d0e0;
+    --text:#1a1a2e; --muted:#8888aa; --accent:#6254e8; --accent2:#e8447a;
+    --compare:#e08800; --swap:#d63070; --sorted:#00a878; --normal:#6254e8;
+    --pivot:#c800e8; --merge-left:#0070d4; --merge-right:#e05800;
+    --grid-line:rgba(98,84,232,0.05);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:'DM Sans',sans-serif; min-height:100vh; overflow-x:hidden; transition:background 0.3s, color 0.3s; }
+  body::before {
+    content:''; position:fixed; inset:0;
+    background-image:linear-gradient(var(--grid-line) 1px,transparent 1px),linear-gradient(90deg,var(--grid-line) 1px,transparent 1px);
+    background-size:40px 40px; pointer-events:none; z-index:0;
+  }
+
+  /* ── NAV ── */
+  nav {
+    position:sticky; top:0; z-index:100;
+    background:rgba(10,10,15,0.92); backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 24px; height:52px; gap:12px;
+    transition:background 0.3s;
+  }
+  body.light nav { background:rgba(244,244,248,0.92); }
+  .nav-logo { font-family:'Space Mono',monospace; font-size:13px; font-weight:700; background:linear-gradient(135deg,var(--accent),var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; white-space:nowrap; }
+  .nav-tabs { display:flex; gap:4px; overflow-x:auto; flex:1; padding:0 16px; scrollbar-width:none; }
+  .nav-tabs::-webkit-scrollbar { display:none; }
+  .nav-tab {
+    font-family:'Space Mono',monospace; font-size:11px; padding:6px 14px; border-radius:6px;
+    border:1px solid transparent; background:transparent; color:var(--muted);
+    cursor:pointer; transition:all 0.18s; letter-spacing:0.4px; white-space:nowrap;
+  }
+  .nav-tab:hover { color:var(--text); border-color:var(--border); }
+  .nav-tab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .nav-tab.multi-tab { border-color:rgba(255,106,155,0.4); color:var(--accent2); }
+  .nav-tab.multi-tab:hover { background:rgba(255,106,155,0.12); }
+  .nav-tab.multi-tab.active { background:var(--accent2); border-color:var(--accent2); color:#fff; }
+  .nav-right { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+  .theme-toggle {
+    display:flex; align-items:center; gap:6px; cursor:pointer;
+    background:var(--surface); border:1px solid var(--border); border-radius:20px;
+    padding:4px 10px 4px 7px; transition:all 0.2s; user-select:none;
+  }
+  .theme-toggle:hover { border-color:var(--accent); }
+  .theme-label { font-family:'Space Mono',monospace; font-size:9px; color:var(--muted); }
+  .toggle-track { width:30px; height:16px; border-radius:8px; background:var(--border); position:relative; transition:background 0.25s; flex-shrink:0; }
+  body.light .toggle-track { background:var(--accent); }
+  .toggle-thumb { position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:50%; background:#fff; transition:transform 0.25s; box-shadow:0 1px 3px rgba(0,0,0,0.3); }
+  body.light .toggle-thumb { transform:translateX(14px); }
+
+  /* ── Page sections ── */
+  .page { display:none; }
+  .page.active { display:block; }
+  .container { max-width:1100px; margin:0 auto; padding:20px 20px; position:relative; z-index:1; }
+
+  /* ── Layout ── */
+  .main { display:grid; grid-template-columns:1fr 300px; gap:16px; align-items:start; }
+  @media(max-width:800px){ .main{grid-template-columns:1fr;} }
+
+  /* ── Visualizer Card ── */
+  .viz-card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:20px; }
+
+  /* ── Bars ── */
+  .bars-wrap { height:240px; display:flex; align-items:flex-end; gap:3px; padding:0 4px; position:relative; }
+  .bar-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; min-width:0; position:relative; }
+  .bar { width:100%; border-radius:4px 4px 0 0; transition:height 0.25s ease, background 0.2s ease; background:var(--normal); }
+  .bar.compare { background:var(--compare); box-shadow:0 0 8px rgba(255,179,71,0.5); }
+  .bar.swap    { background:var(--swap); box-shadow:0 0 10px rgba(255,106,155,0.45); }
+  .bar.sorted  { background:var(--sorted); }
+  .bar.pivot   { background:var(--pivot); box-shadow:0 0 12px rgba(255,106,255,0.55); }
+  .bar.merge-left  { background:var(--merge-left); box-shadow:0 0 8px rgba(106,184,255,0.4); }
+  .bar.merge-right { background:var(--merge-right); box-shadow:0 0 8px rgba(255,159,106,0.4); }
+  .bar-val { font-family:'Space Mono',monospace; font-size:9px; color:var(--muted); text-align:center; width:100%; overflow:hidden; }
+  .heat-dot {
+    position:absolute; top:2px; left:50%; transform:translateX(-50%);
+    width:14px; height:14px; border-radius:50%; font-size:8px;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Space Mono',monospace; font-weight:700; z-index:10; pointer-events:none;
+  }
+
+  /* ── Legend ── */
+  .legend { display:flex; gap:12px; flex-wrap:wrap; margin-top:10px; }
+  .legend-item { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--muted); }
+  .legend-dot { width:10px; height:10px; border-radius:2px; flex-shrink:0; }
+
+  /* ── Step Description ── */
+  .step-desc {
+    background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:12px 16px;
+    margin-top:14px; font-size:13px; color:var(--text); min-height:54px; line-height:1.6;
+  }
+  .tag { display:inline-block; font-family:'Space Mono',monospace; font-size:10px; padding:2px 8px; border-radius:4px; margin-right:8px; font-weight:700; }
+  .tag.compare { background:rgba(255,179,71,0.15); color:var(--compare); }
+  .tag.swap    { background:rgba(255,106,155,0.15); color:var(--swap); }
+  .tag.sorted  { background:rgba(106,255,204,0.15); color:var(--sorted); }
+  .tag.info    { background:rgba(124,106,255,0.15); color:var(--accent); }
+  .tag.pivot   { background:rgba(255,106,255,0.15); color:var(--pivot); }
+  .tag.merge   { background:rgba(106,184,255,0.15); color:var(--merge-left); }
+  .tag.quiz    { background:rgba(255,179,71,0.25); color:#ffdd88; }
+
+  /* ── Quiz Panel ── */
+  .quiz-panel {
+    background:linear-gradient(135deg,rgba(124,106,255,0.12),rgba(255,106,155,0.08));
+    border:1px solid rgba(124,106,255,0.35); border-radius:10px; padding:14px 16px;
+    margin-top:10px; display:none; text-align:center;
+  }
+  .quiz-panel.visible { display:block; }
+  .quiz-question { font-size:14px; font-weight:600; margin-bottom:12px; color:var(--text); }
+  .quiz-btns { display:flex; gap:10px; justify-content:center; }
+  .quiz-btn { font-family:'Space Mono',monospace; font-size:12px; padding:8px 20px; border-radius:8px; border:1px solid var(--border); cursor:pointer; transition:all 0.15s; }
+  .quiz-btn.yes { background:rgba(255,106,155,0.15); border-color:var(--swap); color:var(--swap); }
+  .quiz-btn.yes:hover { background:rgba(255,106,155,0.3); }
+  .quiz-btn.no  { background:rgba(106,255,204,0.1); border-color:var(--sorted); color:var(--sorted); }
+  .quiz-btn.no:hover { background:rgba(106,255,204,0.2); }
+  .quiz-result { margin-top:10px; font-size:13px; font-weight:600; padding:6px 12px; border-radius:6px; display:none; }
+  .quiz-result.correct { background:rgba(106,255,204,0.15); color:var(--sorted); display:block; }
+  .quiz-result.wrong   { background:rgba(255,106,155,0.15); color:var(--swap);   display:block; }
+  .quiz-score { font-family:'Space Mono',monospace; font-size:11px; color:var(--muted); margin-top:4px; }
+  .quiz-countdown { font-family:'Space Mono',monospace; font-size:11px; color:var(--muted); margin-top:6px; display:none; }
+  .quiz-countdown.visible { display:block; }
+
+  /* ── Replay Banner ── */
+  .replay-banner {
+    display:none; background:linear-gradient(135deg,rgba(106,255,204,0.1),rgba(124,106,255,0.1));
+    border:1px solid rgba(106,255,204,0.3); border-radius:10px; padding:10px 16px;
+    margin-top:10px; text-align:center; font-size:12px; color:var(--sorted); font-family:'Space Mono',monospace;
+  }
+  .replay-banner.visible { display:block; }
+
+  /* ── Controls ── */
+  .controls { margin-top:14px; display:flex; flex-direction:column; gap:10px; }
+  .btn-row { display:flex; gap:8px; flex-wrap:wrap; }
+  .btn {
+    font-family:'Space Mono',monospace; font-size:11px; padding:8px 16px; border-radius:8px;
+    border:1px solid var(--border); background:var(--surface2); color:var(--text);
+    cursor:pointer; transition:all 0.15s; letter-spacing:0.5px;
+  }
+  .btn:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+  .btn:disabled { opacity:0.35; cursor:default; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .btn.primary:hover:not(:disabled) { background:#9080ff; }
+  .btn.danger { background:rgba(255,106,155,0.12); border-color:var(--swap); color:var(--swap); }
+  .btn.quiz-active { background:rgba(255,221,136,0.15); border-color:#ffdd88; color:#ffdd88; }
+  .btn.replay-btn { background:rgba(106,255,204,0.1); border-color:var(--sorted); color:var(--sorted); }
+  .ctrl-row { display:flex; align-items:center; gap:10px; }
+  .ctrl-row label { font-size:11px; color:var(--muted); white-space:nowrap; font-family:'Space Mono',monospace; min-width:44px; }
+  input[type=range] { flex:1; accent-color:var(--accent); cursor:pointer; height:4px; }
+  .ctrl-val { font-family:'Space Mono',monospace; font-size:11px; color:var(--accent); min-width:28px; text-align:right; }
+  .custom-input {
+    flex:1; background:var(--surface2); border:1px solid var(--border); border-radius:6px;
+    padding:6px 10px; color:var(--text); font-family:'Space Mono',monospace; font-size:11px; outline:none; transition:border-color 0.2s;
+  }
+  .custom-input:focus { border-color:var(--accent); }
+  .custom-input.error { border-color:var(--swap) !important; }
+  .progress-row { display:flex; justify-content:space-between; align-items:center; }
+  .progress-text { font-family:'Space Mono',monospace; font-size:11px; color:var(--muted); }
+  .quiz-badge { font-family:'Space Mono',monospace; font-size:10px; background:rgba(255,221,136,0.15); border:1px solid rgba(255,221,136,0.3); border-radius:6px; padding:3px 8px; color:#ffdd88; display:none; margin-left:4px; }
+  .quiz-badge.visible { display:inline-block; }
+
+  /* ── Sidebar ── */
+  .sidebar { display:flex; flex-direction:column; gap:14px; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; }
+  .card-title { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); letter-spacing:1.5px; margin-bottom:12px; text-transform:uppercase; }
+  .stats-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .stat { background:var(--surface2); border-radius:8px; padding:10px; text-align:center; }
+  .stat-val { font-family:'Space Mono',monospace; font-size:22px; font-weight:700; color:var(--accent); }
+  .stat-label { font-size:10px; color:var(--muted); margin-top:2px; }
+  .complexity-item { margin-bottom:12px; }
+  .complexity-item:last-child { margin-bottom:0; }
+  .complexity-label { font-size:12px; color:var(--muted); margin-bottom:4px; }
+  .complexity-bar-bg { background:var(--surface2); border-radius:4px; height:8px; overflow:hidden; }
+  .complexity-bar-fill { height:100%; border-radius:4px; transition:width 0.6s ease; }
+  .complexity-val { font-family:'Space Mono',monospace; font-size:11px; margin-top:3px; }
+  .complexity-note { font-size:10px; color:var(--muted); font-weight:400; }
+  .code-box { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:12px; font-family:'Space Mono',monospace; font-size:11px; line-height:1.9; color:var(--muted); max-height:220px; overflow-y:auto; }
+  .code-box .kw { color:var(--accent); }
+  .code-box .cm { color:#3d3d5a; }
+  body.light .code-box .cm { color:#aaaacc; }
+  .code-line { padding:1px 4px; border-radius:3px; display:block; white-space:pre; }
+  .code-line.active-line { background:rgba(124,106,255,0.18); color:var(--text); }
+  .why-card { background:var(--surface); border:1px solid var(--border); border-radius:14px; overflow:hidden; }
+  .why-header { padding:14px 16px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; user-select:none; transition:background 0.15s; }
+  .why-header:hover { background:var(--surface2); }
+  .why-title { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); letter-spacing:1.5px; text-transform:uppercase; }
+  .why-chevron { color:var(--muted); transition:transform 0.25s; font-size:12px; }
+  .why-chevron.open { transform:rotate(180deg); }
+  .why-body { padding:0 16px; max-height:0; overflow:hidden; transition:max-height 0.35s ease, padding 0.25s; }
+  .why-body.open { max-height:300px; padding:0 16px 16px; }
+  .why-text { font-size:12px; color:var(--text); line-height:1.7; }
+  .why-tag { display:inline-block; font-family:'Space Mono',monospace; font-size:9px; padding:2px 7px; border-radius:4px; margin-bottom:8px; background:rgba(124,106,255,0.15); color:var(--accent); }
+  .why-use-case { background:var(--surface2); border-radius:8px; padding:10px 12px; margin-top:10px; font-size:11px; color:var(--muted); border-left:3px solid var(--accent); }
+  .why-use-title { font-weight:600; color:var(--text); font-size:12px; margin-bottom:4px; }
+  .facts-ticker { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 16px; margin-top:16px; display:flex; align-items:center; gap:10px; overflow:hidden; }
+  .facts-label { font-family:'Space Mono',monospace; font-size:9px; color:var(--accent); letter-spacing:1.5px; text-transform:uppercase; white-space:nowrap; }
+  .facts-text { font-size:12px; color:var(--muted); flex:1; min-width:0; }
+  .facts-text span { display:block; animation:fadeSlide 0.5s ease; }
+  @keyframes fadeSlide { from{opacity:0;transform:translateY(8px);} to{opacity:1;transform:translateY(0);} }
+  .facts-dot { width:6px; height:6px; border-radius:50%; background:var(--accent); flex-shrink:0; animation:pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+
+  /* ── Confetti ── */
+  #confetti-canvas { position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:9999; display:none; }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width:4px; height:4px; }
+  ::-webkit-scrollbar-track { background:var(--surface2); }
+  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+  /* ═══════════════════════════════════════
+     MULTI-SORT VIEW
+  ═══════════════════════════════════════ */
+  .multi-page-header { text-align:center; padding:20px 0 14px; }
+  .multi-page-header h2 { font-family:'Space Mono',monospace; font-size:18px; font-weight:700; background:linear-gradient(135deg,var(--accent),var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+  .multi-page-header p { color:var(--muted); font-size:13px; margin-top:4px; }
+  .multi-controls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:center; margin-bottom:18px; }
+  .multi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; }
+  .multi-card {
+    background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:16px;
+    display:flex; flex-direction:column; gap:10px;
+  }
+  .multi-card-title {
+    font-family:'Space Mono',monospace; font-size:11px; font-weight:700; letter-spacing:0.8px;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .multi-card-title span { color:var(--muted); font-size:10px; }
+  .multi-bars { height:160px; display:flex; align-items:flex-end; gap:2px; padding:0 2px; }
+  .multi-bar { flex:1; border-radius:3px 3px 0 0; transition:height 0.2s ease, background 0.15s ease; background:var(--normal); }
+  .multi-bar.compare { background:var(--compare); box-shadow:0 0 6px rgba(255,179,71,0.4); }
+  .multi-bar.swap    { background:var(--swap);    box-shadow:0 0 8px rgba(255,106,155,0.4); }
+  .multi-bar.sorted  { background:var(--sorted); }
+  .multi-bar.pivot   { background:var(--pivot);   box-shadow:0 0 8px rgba(255,106,255,0.4); }
+  .multi-bar.merge-left  { background:var(--merge-left); }
+  .multi-bar.merge-right { background:var(--merge-right); }
+  .multi-desc { font-size:11px; color:var(--muted); min-height:34px; line-height:1.5; background:var(--surface2); border-radius:8px; padding:8px 10px; }
+  .multi-stats { display:flex; gap:12px; }
+  .multi-stat { font-family:'Space Mono',monospace; font-size:10px; color:var(--muted); }
+  .multi-stat b { color:var(--accent); }
+  .multi-progress { height:3px; background:var(--surface2); border-radius:2px; overflow:hidden; }
+  .multi-progress-fill { height:100%; border-radius:2px; background:linear-gradient(90deg,var(--accent),var(--accent2)); transition:width 0.3s ease; }
+  .multi-done-badge {
+    display:none; font-family:'Space Mono',monospace; font-size:9px; padding:2px 7px; border-radius:4px;
+    background:rgba(106,255,204,0.15); color:var(--sorted); border:1px solid rgba(106,255,204,0.3);
+  }
+  .multi-done-badge.vis { display:inline-block; }
+  .multi-global-controls { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:12px; }
+</style>
+</head>
+<body>
+
+<canvas id="confetti-canvas"></canvas>
+
+<!-- ── NAVBAR ── -->
+<nav>
+  <div class="nav-logo">⬡ SortViz</div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="showPage('bubble',this)">Bubble</button>
+    <button class="nav-tab" onclick="showPage('insertion',this)">Insertion</button>
+    <button class="nav-tab" onclick="showPage('selection',this)">Selection</button>
+    <button class="nav-tab" onclick="showPage('quick',this)">Quick</button>
+    <button class="nav-tab" onclick="showPage('merge',this)">Merge</button>
+    <button class="nav-tab multi-tab" onclick="showPage('multi',this)">⊞ Multi-Sort</button>
+  </div>
+  <div class="nav-right">
+    <div class="theme-toggle" onclick="toggleTheme()">
+      <span id="theme-icon">🌙</span>
+      <div class="toggle-track"><div class="toggle-thumb"></div></div>
+      <span class="theme-label" id="theme-label">DARK</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════ SINGLE-ALGO PAGES ═══════════ -->
+<div class="page active" id="page-single">
+  <div class="container">
+    <div class="main">
+
+      <!-- ── Left: Visualization Card ── -->
+      <div class="viz-card">
+        <div class="bars-wrap" id="bars-wrap"></div>
+
+        <div class="legend" id="legend-wrap"></div>
+
+        <div class="step-desc" id="step-desc">
+          <span class="tag info">ready</span>Press <b>Next →</b> to step through, or <b>Auto Play</b> to animate.
+        </div>
+
+        <div class="quiz-panel" id="quiz-panel">
+          <div class="quiz-question" id="quiz-question">Will these two elements swap?</div>
+          <div class="quiz-btns">
+            <button class="quiz-btn yes" onclick="answerQuiz(true)">✦ Yes, swap!</button>
+            <button class="quiz-btn no" onclick="answerQuiz(false)">✗ No, stay</button>
+          </div>
+          <div class="quiz-result" id="quiz-result"></div>
+          <div class="quiz-score" id="quiz-score"></div>
+          <div class="quiz-countdown" id="quiz-countdown">⏱ Next in <span id="quiz-countdown-val">1</span>s...</div>
+        </div>
+
+        <div class="replay-banner" id="replay-banner">▶▶ Annotated Replay — watching key swap moments at 2× speed</div>
+
+        <div class="controls">
+          <div class="btn-row">
+            <button class="btn" id="btn-prev" onclick="stepPrev()" disabled>← Prev</button>
+            <button class="btn" id="btn-next" onclick="stepNext()">Next →</button>
+            <button class="btn primary" id="btn-auto" onclick="toggleAuto()">▷ Auto Play</button>
+            <button class="btn" onclick="resetAll()">⟳ New Array</button>
+          </div>
+          <div class="btn-row">
+            <button class="btn" id="btn-quiz" onclick="toggleQuizMode()">✎ Quiz Mode</button>
+            <span class="quiz-badge" id="quiz-badge">0/0</span>
+            <button class="btn replay-btn" id="btn-replay" onclick="startReplay()" disabled>▶▶ Replay</button>
+          </div>
+          <div class="ctrl-row">
+            <label>SPEED</label>
+            <input type="range" id="speed-range" min="50" max="950" value="500" step="50" oninput="updateSpeed(this.value)">
+            <span class="ctrl-val" id="speed-label">5x</span>
+          </div>
+          <div class="ctrl-row">
+            <label>SIZE</label>
+            <input type="range" id="size-range" min="5" max="20" value="10" step="1" oninput="resizeArray(this.value)">
+            <span class="ctrl-val" id="size-label">10</span>
+          </div>
+          <div class="ctrl-row">
+            <label>CUSTOM</label>
+            <input type="text" id="custom-input" class="custom-input" placeholder="e.g. 5, 3, 8, 1, 9" onkeydown="if(event.key==='Enter')applyCustom()">
+            <button class="btn" onclick="applyCustom()" style="padding:6px 12px;white-space:nowrap;">✓ Use</button>
+          </div>
+          <div class="progress-row">
+            <span class="progress-text" id="step-counter">Step 1 / 0</span>
+            <span class="progress-text" id="pass-label"></span>
+          </div>
+        </div>
+      </div><!-- /.viz-card -->
+
+      <!-- ── Right: Sidebar ── -->
+      <div class="sidebar">
+        <div class="card">
+          <div class="card-title">Live Stats</div>
+          <div class="stats-grid">
+            <div class="stat"><div class="stat-val" id="stat-cmp">0</div><div class="stat-label">Comparisons</div></div>
+            <div class="stat"><div class="stat-val" id="stat-swap">0</div><div class="stat-label">Swaps</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Time Complexity</div>
+          <div id="complexity-display"></div>
+        </div>
+        <div class="why-card" id="why-card">
+          <div class="why-header" onclick="toggleWhy()">
+            <span class="why-title">Why This Algorithm?</span>
+            <span class="why-chevron" id="why-chevron">▼</span>
+          </div>
+          <div class="why-body" id="why-body">
+            <div id="why-content"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Java Code</div>
+          <div class="code-box" id="code-box"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="facts-ticker">
+      <div class="facts-dot"></div>
+      <span class="facts-label">DID YOU KNOW</span>
+      <div class="facts-text"><span id="facts-text">Loading fun fact...</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ MULTI-SORT PAGE ═══════════ -->
+<div class="page" id="page-multi">
+  <div class="container">
+    <div class="multi-page-header">
+      <h2>⊞ Simultaneous Multi-Sort</h2>
+      <p>All 5 algorithms racing on the same array — watch how they differ in real time.</p>
+    </div>
+
+    <div class="multi-controls">
+      <div class="ctrl-row" style="gap:10px;">
+        <label style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);white-space:nowrap;">SPEED</label>
+        <input type="range" id="multi-speed" min="50" max="950" value="500" step="50" style="width:120px;accent-color:var(--accent);" oninput="updateMultiSpeed(this.value)">
+        <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--accent);" id="multi-speed-label">5x</span>
+      </div>
+      <div class="ctrl-row" style="gap:10px;">
+        <label style="font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);white-space:nowrap;">SIZE</label>
+        <input type="range" id="multi-size" min="5" max="16" value="10" step="1" style="width:100px;accent-color:var(--accent);" oninput="updateMultiSize(this.value)">
+        <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--accent);" id="multi-size-label">10</span>
+      </div>
+    </div>
+
+    <div class="multi-grid" id="multi-grid"></div>
+
+    <div class="multi-global-controls">
+      <button class="btn primary" id="multi-play-btn" onclick="multiToggleAuto()">▷ Start All</button>
+      <button class="btn" onclick="multiReset()">⟳ New Arrays</button>
+    </div>
+
+    <div class="facts-ticker" style="margin-top:16px;">
+      <div class="facts-dot"></div>
+      <span class="facts-label">DID YOU KNOW</span>
+      <div class="facts-text"><span id="facts-text-multi">Loading...</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════════ */
+var algo = 'bubble', steps = [], stepIdx = 0, autoTimer = null;
+var arraySize = 10, currentArr = [];
+var quizMode = false, quizPending = false, quizCorrect = 0, quizTotal = 0, quizAutoPlay = false;
+var isReplay = false, swapHeatmap = [];
+var sortCompleted = false;
+var currentPage = 'bubble';
+var whyOpen = false;
+
+/* ═══════════════════════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════════════════════ */
+function makeArray(n) {
+  var a = [];
+  for (var i = 0; i < n; i++) a.push(Math.floor(Math.random() * 85) + 10);
+  return a;
+}
+function snap(out, a, desc, tag, cmp, swp, srt, cl, cmps, swps, extra) {
+  out.push({
+    arr: a.slice(), compare: cmp || [], swap: swp || [],
+    sorted: srt.slice(), desc: desc, tag: tag, codeLine: cl, cmps: cmps, swps: swps,
+    extra: extra || {}  // {pivot:[], mergeLeft:[], mergeRight:[]}
+  });
+}
+
+/* ═══════════════════════════════════════════════════════
+   BUBBLE SORT
+═══════════════════════════════════════════════════════ */
+function buildBubble(arr) {
+  var out=[], a=arr.slice(), n=a.length, cmps=0, swps=0, s=[];
+  snap(out,a,'Starting <b>Bubble Sort</b>. We repeatedly compare neighbours and bubble the largest to the end.','info',[],[],s,0,cmps,swps);
+  for (var p=0; p<n-1; p++) {
+    snap(out,a,'Pass '+(p+1)+': scanning from index 0 to '+(n-p-2)+'.','info',[],[],s,2,cmps,swps);
+    var swapped=false;
+    for (var j=0; j<n-p-1; j++) {
+      cmps++;
+      snap(out,a,'Compare arr['+j+']='+a[j]+' and arr['+(j+1)+']='+a[j+1]+'. Is <b>'+a[j]+' &gt; '+a[j+1]+'</b>?','compare',[j,j+1],[],s,4,cmps,swps);
+      if (a[j]>a[j+1]) {
+        var t=a[j]; a[j]=a[j+1]; a[j+1]=t; swps++; swapped=true;
+        snap(out,a,'YES — swap! <b>'+a[j+1]+'</b> was bigger.','swap',[],[j,j+1],s,6,cmps,swps);
+      } else {
+        snap(out,a,'No swap. '+a[j]+' ≤ '+a[j+1]+', already ordered.','info',[j,j+1],[],s,5,cmps,swps);
+      }
+    }
+    s.push(n-p-1);
+    snap(out,a,'End of pass '+(p+1)+'. <b>'+a[n-p-1]+'</b> is in its final position.','sorted',[],[],s,9,cmps,swps);
+    if (!swapped) {
+      for (var k=0; k<n-p-1; k++) s.push(k);
+      snap(out,a,'No swaps this pass — array already sorted! <b>Early exit.</b>','sorted',[],[],s,10,cmps,swps);
+      break;
+    }
+  }
+  s.push(0);
+  snap(out,a,'Bubble Sort complete! ['+a.join(', ')+']','sorted',[],[],s,12,cmps,swps);
+  return out;
+}
+
+/* ═══════════════════════════════════════════════════════
+   INSERTION SORT
+═══════════════════════════════════════════════════════ */
+function buildInsertion(arr) {
+  var out=[], a=arr.slice(), n=a.length, cmps=0, swps=0, s=[0];
+  snap(out,a,'Starting <b>Insertion Sort</b>. Index 0 is "sorted". We insert each element into its correct place on the left.','info',[],[],s,0,cmps,swps);
+  for (var i=1; i<n; i++) {
+    var key=a[i];
+    snap(out,a,'Pick a['+i+'] = <b>'+key+'</b> as the key to insert.','info',[i],[],s,2,cmps,swps);
+    var j=i-1;
+    while (j>=0 && a[j]>key) {
+      cmps++;
+      snap(out,a,'arr['+j+']='+a[j]+' &gt; key='+key+'? YES — shift <b>'+a[j]+'</b> right.','compare',[j,j+1],[],s,5,cmps,swps);
+      a[j+1]=a[j]; swps++;
+      snap(out,a,'Shifted! arr['+(j+1)+']='+a[j+1]+'.','swap',[],[j,j+1],s,6,cmps,swps);
+      j--;
+    }
+    if (j>=0) { cmps++; snap(out,a,'arr['+j+']='+a[j]+' ≤ key='+key+' — stop shifting.','info',[j,j+1],[],s,5,cmps,swps); }
+    a[j+1]=key; s.push(i);
+    snap(out,a,'Placed key=<b>'+key+'</b> at index '+(j+1)+'. Sorted: ['+a.slice(0,i+1).join(', ')+']','sorted',[],[j+1],s,8,cmps,swps);
+  }
+  snap(out,a,'Insertion Sort complete! ['+a.join(', ')+']','sorted',[],[],s,10,cmps,swps);
+  return out;
+}
+
+/* ═══════════════════════════════════════════════════════
+   SELECTION SORT (no minimum highlight — colored comparisons)
+═══════════════════════════════════════════════════════ */
+function buildSelection(arr) {
+  var out=[], a=arr.slice(), n=a.length, cmps=0, swps=0, s=[];
+  snap(out,a,'Starting <b>Selection Sort</b>. Each pass scans the unsorted portion and finds the minimum, then places it at the front.','info',[],[],s,0,cmps,swps);
+  for (var i=0; i<n-1; i++) {
+    var m=i;
+    snap(out,a,'Pass '+(i+1)+': scanning indices '+i+' to '+(n-1)+'. Candidate min = arr['+i+'] = <b>'+a[i]+'</b>','info',[i],[],s,2,cmps,swps);
+    for (var j=i+1; j<n; j++) {
+      cmps++;
+      snap(out,a,'Compare arr['+j+']=<b>'+a[j]+'</b> vs current min arr['+m+']=<b>'+a[m]+'</b>. <b>'+a[j]+(a[j]<a[m]?' is smaller — new min!</b>':' ≥ min — keep going.</b>'),'compare',[j,m],[],s,4,cmps,swps);
+      if (a[j]<a[m]) m=j;
+    }
+    if (m!==i) {
+      snap(out,a,'Min is <b>'+a[m]+'</b> at index '+m+'. Swapping with arr['+i+']='+a[i]+'.','swap',[],[i,m],s,7,cmps,swps);
+      var t=a[i]; a[i]=a[m]; a[m]=t; swps++;
+      snap(out,a,'Swapped! <b>'+a[i]+'</b> now at index '+i+'.','swap',[],[i,m],s,8,cmps,swps);
+    } else {
+      snap(out,a,'arr['+i+']=<b>'+a[i]+'</b> is already the minimum — no swap needed.','info',[],[],s,7,cmps,swps);
+    }
+    s.push(i);
+    snap(out,a,'Index '+i+' is now sorted (value <b>'+a[i]+'</b>).','sorted',[],[],s,10,cmps,swps);
+  }
+  s.push(n-1);
+  snap(out,a,'Selection Sort complete! ['+a.join(', ')+']','sorted',[],[],s,12,cmps,swps);
+  return out;
+}
+
+/* ═══════════════════════════════════════════════════════
+   QUICK SORT
+═══════════════════════════════════════════════════════ */
+function buildQuick(arr) {
+  var out=[], a=arr.slice(), n=a.length, cmps=0, swps=0, s=[];
+  snap(out,a,'Starting <b>Quick Sort</b>. We pick a pivot, partition the array so smaller elements go left and larger go right, then recurse.','info',[],[],s,0,cmps,swps);
+
+  function partition(lo, hi) {
+    var pivot=a[hi], pivotIdx=hi;
+    snap(out,a,'Partition ['+lo+'..'+hi+']. Pivot = <b>'+pivot+'</b> at index '+hi+'.','pivot',[],[],s,3,cmps,swps,{pivot:[pivotIdx]});
+    var store=lo;
+    for (var k=lo; k<hi; k++) {
+      cmps++;
+      snap(out,a,'Compare arr['+k+']=<b>'+a[k]+'</b> vs pivot <b>'+pivot+'</b>. '+(a[k]<=pivot?a[k]+' ≤ pivot — move left.':''+a[k]+' > pivot — skip.'),'compare',[k,hi],[],s,5,cmps,swps,{pivot:[pivotIdx]});
+      if (a[k]<=pivot) {
+        if (k!==store) {
+          var t=a[k]; a[k]=a[store]; a[store]=t; swps++;
+          snap(out,a,'Swap arr['+k+']='+a[store]+' ↔ arr['+store+']='+a[k]+' (store pointer).','swap',[],[k,store],s,7,cmps,swps,{pivot:[pivotIdx]});
+        }
+        store++;
+      }
+    }
+    var t=a[store]; a[store]=a[hi]; a[hi]=t; swps++;
+    snap(out,a,'Place pivot <b>'+a[store]+'</b> at final position '+store+'.','swap',[],[store,hi],s,9,cmps,swps,{pivot:[store]});
+    s.push(store);
+    return store;
+  }
+
+  function qsort(lo, hi) {
+    if (lo>=hi) { if (lo===hi) s.push(lo); return; }
+    var p=partition(lo,hi);
+    snap(out,a,'Pivot <b>'+a[p]+'</b> placed at '+p+'. Recurse left ['+lo+'..'+(p-1)+'] and right ['+(p+1)+'..'+hi+'].','info',[],[],s,11,cmps,swps);
+    qsort(lo,p-1);
+    qsort(p+1,hi);
+  }
+
+  qsort(0,n-1);
+  // ensure all sorted
+  for (var i=0; i<n; i++) { if (s.indexOf(i)===-1) s.push(i); }
+  snap(out,a,'Quick Sort complete! ['+a.join(', ')+']','sorted',[],[],s,13,cmps,swps);
+  return out;
+}
+
+/* ═══════════════════════════════════════════════════════
+   MERGE SORT
+═══════════════════════════════════════════════════════ */
+function buildMerge(arr) {
+  var out=[], a=arr.slice(), n=a.length, cmps=0, swps=0, s=[];
+  snap(out,a,'Starting <b>Merge Sort</b>. Recursively divide the array in half, sort each half, then merge them back in order.','info',[],[],s,0,cmps,swps);
+
+  function merge(lo, mid, hi) {
+    var left=a.slice(lo,mid+1), right=a.slice(mid+1,hi+1);
+    snap(out,a,'Merging ['+lo+'..'+mid+'] = ['+left.join(',')+'] with ['+(mid+1)+'..'+hi+'] = ['+right.join(',')+'].','merge',[],[],s,5,cmps,swps,{mergeLeft:range(lo,mid),mergeRight:range(mid+1,hi)});
+    var i=0, j=0, k=lo;
+    while (i<left.length && j<right.length) {
+      cmps++;
+      snap(out,a,'Compare left['+i+']=<b>'+left[i]+'</b> vs right['+j+']=<b>'+right[j]+'</b>.','compare',[lo+i,mid+1+j],[],s,7,cmps,swps,{mergeLeft:range(lo,mid),mergeRight:range(mid+1,hi)});
+      if (left[i]<=right[j]) {
+        a[k]=left[i++];
+      } else {
+        a[k]=right[j++]; swps++;
+        snap(out,a,'Right['+( j-1)+']=<b>'+a[k]+'</b> is smaller — place at index '+k+'.','swap',[],[k],s,9,cmps,swps,{mergeLeft:range(lo,mid),mergeRight:range(mid+1,hi)});
+      }
+      k++;
+    }
+    while (i<left.length) { a[k++]=left[i++]; }
+    while (j<right.length) { a[k++]=right[j++]; }
+    for (var x=lo; x<=hi; x++) s.push(x);
+    snap(out,a,'Merged ['+lo+'..'+hi+'] = ['+a.slice(lo,hi+1).join(',')+'].','sorted',[],[],s,11,cmps,swps);
+  }
+
+  function msort(lo, hi) {
+    if (lo>=hi) { s.push(lo); return; }
+    var mid=Math.floor((lo+hi)/2);
+    snap(out,a,'Split ['+lo+'..'+hi+'] at mid='+mid+'. Left=['+lo+'..'+mid+'] Right=['+(mid+1)+'..'+hi+'].','info',[],[],s,2,cmps,swps);
+    msort(lo,mid);
+    msort(mid+1,hi);
+    merge(lo,mid,hi);
+  }
+
+  msort(0,n-1);
+  for (var i=0; i<n; i++) { if (s.indexOf(i)===-1) s.push(i); }
+  snap(out,a,'Merge Sort complete! ['+a.join(', ')+']','sorted',[],[],s,13,cmps,swps);
+  return out;
+}
+
+function range(lo,hi){var a=[];for(var i=lo;i<=hi;i++)a.push(i);return a;}
+
+/* ═══════════════════════════════════════════════════════
+   CODE DEFINITIONS
+═══════════════════════════════════════════════════════ */
+var CODE = {
+  bubble:[
+    {t:'<span class="kw">void</span> bubbleSort(<span class="kw">int</span>[] arr) {',l:0},
+    {t:'  <span class="kw">int</span> n = arr.length;',l:1},
+    {t:'  <span class="kw">for</span> (pass=0; pass&lt;n-1; pass++) {',l:2},
+    {t:'    <span class="kw">boolean</span> swapped = false;',l:3},
+    {t:'    <span class="kw">for</span> (j=0; j&lt;n-pass-1; j++) {',l:4},
+    {t:'      <span class="cm">// no swap if already ordered</span>',l:5},
+    {t:'      <span class="kw">if</span>(arr[j]&gt;arr[j+1]) swap(j,j+1);',l:6},
+    {t:'    }',l:7},
+    {t:'    <span class="cm">// largest bubbled to end</span>',l:8},
+    {t:'    <span class="kw">if</span>(!swapped) <span class="kw">break</span>;',l:9},
+    {t:'    <span class="cm">// early exit optimisation</span>',l:10},
+    {t:'  }',l:11},
+    {t:'} <span class="cm">// done!</span>',l:12}
+  ],
+  insertion:[
+    {t:'<span class="kw">void</span> insertionSort(<span class="kw">int</span>[] arr) {',l:0},
+    {t:'  <span class="kw">int</span> n = arr.length;',l:1},
+    {t:'  <span class="kw">for</span> (i=1; i&lt;n; i++) {',l:2},
+    {t:'    <span class="kw">int</span> key = arr[i];',l:3},
+    {t:'    j = i - 1;',l:4},
+    {t:'    <span class="kw">while</span>(j&gt;=0 &amp;&amp; arr[j]&gt;key) {',l:5},
+    {t:'      arr[j+1] = arr[j]; j--;',l:6},
+    {t:'    }',l:7},
+    {t:'    arr[j+1] = key;',l:8},
+    {t:'  }',l:9},
+    {t:'} <span class="cm">// done!</span>',l:10}
+  ],
+  selection:[
+    {t:'<span class="kw">void</span> selectionSort(<span class="kw">int</span>[] arr) {',l:0},
+    {t:'  <span class="kw">int</span> n = arr.length;',l:1},
+    {t:'  <span class="kw">for</span> (i=0; i&lt;n-1; i++) {',l:2},
+    {t:'    minIdx = i;',l:3},
+    {t:'    <span class="kw">for</span> (j=i+1; j&lt;n; j++) {',l:4},
+    {t:'      <span class="kw">if</span>(arr[j] &lt; arr[minIdx])',l:5},
+    {t:'        minIdx = j;',l:5},
+    {t:'    }',l:6},
+    {t:'    swap(arr, i, minIdx);',l:7},
+    {t:'    <span class="cm">// index i is now sorted</span>',l:8},
+    {t:'  }',l:11},
+    {t:'} <span class="cm">// done!</span>',l:12}
+  ],
+  quick:[
+    {t:'<span class="kw">void</span> quickSort(<span class="kw">int</span>[] a, lo, hi) {',l:0},
+    {t:'  <span class="kw">if</span> (lo &gt;= hi) return;',l:1},
+    {t:'  <span class="cm">// choose last element as pivot</span>',l:2},
+    {t:'  pivot = a[hi];',l:3},
+    {t:'  store = lo;',l:4},
+    {t:'  <span class="kw">for</span> (k=lo; k&lt;hi; k++) {',l:5},
+    {t:'    <span class="kw">if</span>(a[k] &lt;= pivot) {',l:6},
+    {t:'      swap(a, k, store++);',l:7},
+    {t:'    }',l:8},
+    {t:'  }',l:8},
+    {t:'  swap(a, store, hi); <span class="cm">// place pivot</span>',l:9},
+    {t:'  quickSort(a, lo, store-1);',l:11},
+    {t:'  quickSort(a, store+1, hi);',l:11},
+    {t:'} <span class="cm">// done!</span>',l:13}
+  ],
+  merge:[
+    {t:'<span class="kw">void</span> mergeSort(<span class="kw">int</span>[] a, lo, hi) {',l:0},
+    {t:'  <span class="kw">if</span> (lo &gt;= hi) return;',l:1},
+    {t:'  mid = (lo + hi) / 2;',l:2},
+    {t:'  mergeSort(a, lo, mid);',l:3},
+    {t:'  mergeSort(a, mid+1, hi);',l:4},
+    {t:'  <span class="cm">// merge two halves</span>',l:5},
+    {t:'  i=lo; j=mid+1; k=lo;',l:6},
+    {t:'  <span class="kw">while</span>(i&lt;=mid &amp;&amp; j&lt;=hi) {',l:7},
+    {t:'    <span class="kw">if</span>(a[i]&lt;=a[j]) out[k++]=a[i++];',l:8},
+    {t:'    <span class="kw">else</span> out[k++]=a[j++];',l:9},
+    {t:'  }',l:10},
+    {t:'  copyBack(out, a, lo, hi);',l:11},
+    {t:'} <span class="cm">// done!</span>',l:13}
+  ]
+};
+
+/* ═══════════════════════════════════════════════════════
+   COMPLEXITY DATA
+═══════════════════════════════════════════════════════ */
+var COMPLEXITY = {
+  bubble:[
+    {label:'Best Case', val:'O(n)', fill:20, color:'var(--sorted)', note:'Already sorted — 1 pass.'},
+    {label:'Average',   val:'O(n²)',fill:75, color:'var(--compare)',note:'Random input — n passes × ~n comparisons.'},
+    {label:'Worst Case',val:'O(n²)',fill:95, color:'var(--swap)',   note:'Reverse sorted — max swaps every pass.'}
+  ],
+  insertion:[
+    {label:'Best Case', val:'O(n)', fill:18, color:'var(--sorted)', note:'Already sorted — 1 comparison/element.'},
+    {label:'Average',   val:'O(n²)',fill:70, color:'var(--compare)',note:'Shift ~half the sorted portion.'},
+    {label:'Worst Case',val:'O(n²)',fill:92, color:'var(--swap)',   note:'Reverse sorted — shift entire left side.'}
+  ],
+  selection:[
+    {label:'Best Case', val:'O(n²)',fill:80, color:'var(--compare)',note:'Always scans full unsorted portion.'},
+    {label:'Average',   val:'O(n²)',fill:80, color:'var(--compare)',note:'n(n−1)/2 comparisons always.'},
+    {label:'Worst Case',val:'O(n²)',fill:80, color:'var(--swap)',   note:'Same as best — no optimisation.'}
+  ],
+  quick:[
+    {label:'Best Case', val:'O(n log n)',fill:40, color:'var(--sorted)', note:'Pivot always splits evenly.'},
+    {label:'Average',   val:'O(n log n)',fill:45, color:'var(--compare)',note:'Expected with random pivots.'},
+    {label:'Worst Case',val:'O(n²)',     fill:95, color:'var(--swap)',   note:'Already sorted + last-element pivot.'}
+  ],
+  merge:[
+    {label:'Best Case', val:'O(n log n)',fill:40, color:'var(--sorted)',    note:'Always divides evenly.'},
+    {label:'Average',   val:'O(n log n)',fill:45, color:'var(--merge-left)',note:'Guaranteed regardless of input.'},
+    {label:'Worst Case',val:'O(n log n)',fill:48, color:'var(--swap)',      note:'Consistent — never degrades.'}
+  ]
+};
+
+/* ═══════════════════════════════════════════════════════
+   WHY DATA
+═══════════════════════════════════════════════════════ */
+var WHY = {
+  bubble:{tag:'TEACHING TOOL',text:'Bubble Sort is the simplest sorting algorithm — great for learning but almost never used in production.',useTitle:'When would you actually use it?',useText:'Detecting if a nearly-sorted list needs a tiny fix (early-exit optimization). Great for embedded systems with tiny datasets.'},
+  insertion:{tag:'REAL-WORLD WINNER',text:'Insertion Sort is deceptively powerful. Despite O(n²) average, it outperforms fancy algorithms on small or nearly-sorted data.',useTitle:'When would you actually use it?',useText:'TimSort (Python, Java, Android) uses Insertion Sort for small subarrays. Ideal for online algorithms — slot each element as it arrives.'},
+  selection:{tag:'MINIMAL SWAPS',text:'Selection Sort makes at most N swaps — the fewest of any comparison sort. Swap cost dominates over compare cost.',useTitle:'When would you actually use it?',useText:'Writing to EEPROM or SD cards where each write degrades the medium. Minimizes costly physical writes.'},
+  quick:{tag:'FASTEST IN PRACTICE',text:'QuickSort is the most widely used sorting algorithm. Its cache-friendly access pattern and tiny constant factor beat Merge Sort in most real scenarios.',useTitle:'When would you actually use it?',useText:'C\'s qsort(), C++ std::sort(), JavaScript V8 engine — all use QuickSort or introsort (QuickSort + HeapSort). Default choice for in-memory sorting.'},
+  merge:{tag:'STABLE & PREDICTABLE',text:'Merge Sort guarantees O(n log n) always. It is stable (equal elements keep their order) and excels at external sorting.',useTitle:'When would you actually use it?',useText:'Sorting linked lists, external sorting (files too large for RAM), and any context requiring stability — e.g. sorting a table by column B while preserving column A order.'}
+};
+
+/* ═══════════════════════════════════════════════════════
+   FUN FACTS
+═══════════════════════════════════════════════════════ */
+var FACTS=[
+  'Bubble Sort was reportedly used in the original iPhone contact list before Apple optimized it.',
+  'TimSort (Python\'s built-in sort) hybridizes Merge Sort with Insertion Sort, exploiting natural runs.',
+  'The world record for sorting 1TB of data took just 172 seconds using 1,400 machines in 2016.',
+  'Bogo Sort randomly shuffles until sorted — average complexity O(n × n!), essentially forever.',
+  'QuickSort was invented by Tony Hoare in 1959 while studying Russian in Moscow.',
+  'Radix Sort can beat O(n log n) by exploiting number structure rather than comparisons.',
+  'Shell Sort is generalized Insertion Sort — compare far-apart elements first, shrink the gap each pass.',
+  'Sleep Sort launches one thread per number, sleeping that many ms, then printing on wake.',
+  'Merge Sort was invented by John von Neumann in 1945 and is still the go-to for disk-based sorting.',
+  'Selection Sort performs exactly n(n-1)/2 comparisons regardless of input — never short-circuits.'
+];
+var factIdx=0;
+function rotateFact(id){var el=document.getElementById(id||'facts-text');factIdx=(factIdx+1)%FACTS.length;el.innerHTML='<span>'+FACTS[factIdx]+'</span>';}
+
+/* ═══════════════════════════════════════════════════════
+   LEGEND CONFIG
+═══════════════════════════════════════════════════════ */
+var LEGENDS = {
+  bubble:    [{c:'var(--normal)',l:'Unsorted'},{c:'var(--compare)',l:'Comparing'},{c:'var(--swap)',l:'Swap'},{c:'var(--sorted)',l:'Sorted'}],
+  insertion: [{c:'var(--normal)',l:'Unsorted'},{c:'var(--compare)',l:'Comparing'},{c:'var(--swap)',l:'Shifting'},{c:'var(--sorted)',l:'Sorted'}],
+  selection: [{c:'var(--normal)',l:'Unsorted'},{c:'var(--compare)',l:'Comparing'},{c:'var(--swap)',l:'Swap'},{c:'var(--sorted)',l:'Sorted'}],
+  quick:     [{c:'var(--normal)',l:'Unsorted'},{c:'var(--compare)',l:'Comparing'},{c:'var(--pivot)',l:'Pivot'},{c:'var(--swap)',l:'Swap'},{c:'var(--sorted)',l:'Sorted'}],
+  merge:     [{c:'var(--normal)',l:'Unsorted'},{c:'var(--compare)',l:'Comparing'},{c:'var(--merge-left)',l:'Left Half'},{c:'var(--merge-right)',l:'Right Half'},{c:'var(--swap)',l:'Placed'},{c:'var(--sorted)',l:'Sorted'}]
+};
+
+/* ═══════════════════════════════════════════════════════
+   HEATMAP
+═══════════════════════════════════════════════════════ */
+function buildHeatmap(){
+  var heat=new Array(steps[0].arr.length).fill(0);
+  for (var i=0;i<steps.length;i++){var s=steps[i];for (var j=0;j<s.swap.length;j++)heat[s.swap[j]]++;}
+  return heat;
+}
+
+/* ═══════════════════════════════════════════════════════
+   PAGE NAVIGATION
+═══════════════════════════════════════════════════════ */
+function showPage(name, el) {
+  document.querySelectorAll('.nav-tab').forEach(function(t){t.classList.remove('active');});
+  el.classList.add('active');
+  currentPage = name;
+
+  if (name === 'multi') {
+    document.getElementById('page-single').classList.remove('active');
+    document.getElementById('page-multi').classList.add('active');
+    if (!multiInitialized) initMulti();
+    return;
+  }
+
+  document.getElementById('page-single').classList.add('active');
+  document.getElementById('page-multi').classList.remove('active');
+
+  algo = name;
+  stopAuto();
+  isReplay = false;
+  document.getElementById('replay-banner').classList.remove('visible');
+  buildAndRender();
+}
+
+/* ═══════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════ */
+function init() {
+  currentArr = makeArray(arraySize);
+  buildAndRender();
+  factIdx = Math.floor(Math.random() * FACTS.length);
+  document.getElementById('facts-text').innerHTML = '<span>'+FACTS[factIdx]+'</span>';
+  document.getElementById('facts-text-multi').innerHTML = '<span>'+FACTS[factIdx]+'</span>';
+  setInterval(function(){rotateFact('facts-text');}, 7000);
+  setInterval(function(){rotateFact('facts-text-multi');}, 8000);
+}
+
+function buildSteps(name, arr) {
+  if (name==='bubble')    return buildBubble(arr);
+  if (name==='insertion') return buildInsertion(arr);
+  if (name==='selection') return buildSelection(arr);
+  if (name==='quick')     return buildQuick(arr);
+  if (name==='merge')     return buildMerge(arr);
+  return buildBubble(arr);
+}
+
+function buildAndRender() {
+  steps = buildSteps(algo, currentArr.slice());
+  stepIdx = 0;
+  stopAuto();
+  sortCompleted = false;
+  swapHeatmap = buildHeatmap();
+  document.getElementById('btn-replay').disabled = true;
+  document.getElementById('replay-banner').classList.remove('visible');
+  resetQuiz();
+  renderLegend();
+  renderStep();
+  renderCode();
+  renderComplexity();
+  renderWhy();
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDER LEGEND
+═══════════════════════════════════════════════════════ */
+function renderLegend() {
+  var items = LEGENDS[algo] || LEGENDS.bubble;
+  var html = '';
+  items.forEach(function(it){
+    html += '<div class="legend-item"><div class="legend-dot" style="background:'+it.c+'"></div>'+it.l+'</div>';
+  });
+  document.getElementById('legend-wrap').innerHTML = html;
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDER STEP
+═══════════════════════════════════════════════════════ */
+function renderStep() {
+  var s = steps[stepIdx];
+  var wrap = document.getElementById('bars-wrap');
+  var maxV = Math.max.apply(null, s.arr);
+  var html = '';
+  var showHeat = isReplay;
+  var extra = s.extra || {};
+
+  for (var i=0; i<s.arr.length; i++) {
+    var v=s.arr[i], cls='';
+    if (s.sorted.indexOf(i)  !== -1) cls='sorted';
+    if (extra.mergeLeft  && extra.mergeLeft.indexOf(i)  !== -1) cls='merge-left';
+    if (extra.mergeRight && extra.mergeRight.indexOf(i) !== -1) cls='merge-right';
+    if (extra.pivot      && extra.pivot.indexOf(i)      !== -1) cls='pivot';
+    if (s.compare.indexOf(i) !== -1) cls='compare';
+    if (s.swap.indexOf(i)    !== -1) cls='swap';
+    var h = Math.max(14, Math.round((v/maxV)*210));
+
+    var heatDot='';
+    if (showHeat && swapHeatmap[i]>0) {
+      var heat=swapHeatmap[i], intensity=Math.min(heat,8);
+      var r=Math.round(100+intensity*19), g=Math.round(Math.max(0,80-intensity*12)), b=Math.round(Math.max(30,155-intensity*18));
+      heatDot='<div class="heat-dot" style="background:rgb('+r+','+g+','+b+');color:#fff;">'+heat+'</div>';
+    }
+
+    html += '<div class="bar-col">'+heatDot+'<div class="bar '+cls+'" style="height:'+h+'px"></div><div class="bar-val">'+v+'</div></div>';
+  }
+  wrap.innerHTML = html;
+
+  if (quizMode && !isReplay && s.tag==='compare' && s.compare.length===2) {
+    showQuizPrompt(s);
+  } else {
+    hideQuizPanel();
+    document.getElementById('step-desc').innerHTML = '<span class="tag '+s.tag+'">'+s.tag+'</span>'+s.desc;
+  }
+
+  document.getElementById('stat-cmp').textContent  = s.cmps;
+  document.getElementById('stat-swap').textContent = s.swps;
+  document.getElementById('step-counter').textContent = 'Step '+(stepIdx+1)+' / '+steps.length;
+
+  var passText='';
+  if (['compare','swap','info'].indexOf(s.tag)!==-1) {
+    var rem = s.arr.length - s.sorted.length;
+    if (rem>0) passText = rem+' unsorted';
+  }
+  document.getElementById('pass-label').textContent = passText;
+  document.getElementById('btn-prev').disabled = (stepIdx===0);
+  document.getElementById('btn-next').disabled = (stepIdx===steps.length-1) || (quizMode && quizPending);
+
+  if (stepIdx===steps.length-1 && !sortCompleted) {
+    sortCompleted=true;
+    document.getElementById('btn-replay').disabled=false;
+    if (!isReplay) launchConfetti();
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   RENDER CODE / COMPLEXITY / WHY
+═══════════════════════════════════════════════════════ */
+function renderCode() {
+  var lines=CODE[algo], active=steps[stepIdx]?steps[stepIdx].codeLine:-1, html='';
+  for (var i=0;i<lines.length;i++) {
+    var cls=(lines[i].l===active)?' active-line':'';
+    html+='<span class="code-line'+cls+'">'+lines[i].t+'</span>';
+  }
+  document.getElementById('code-box').innerHTML=html;
+  var box=document.getElementById('code-box'), al=box.querySelector('.active-line');
+  if (al) { var lt=al.offsetTop,lh=al.offsetHeight,bh=box.clientHeight; if(lt<box.scrollTop||lt+lh>box.scrollTop+bh) box.scrollTop=lt-bh/2+lh/2; }
+}
+
+function renderComplexity() {
+  var items=COMPLEXITY[algo], html='';
+  items.forEach(function(it){
+    html+='<div class="complexity-item">'+
+          '<div class="complexity-label">'+it.label+'</div>'+
+          '<div class="complexity-bar-bg"><div class="complexity-bar-fill" style="width:'+it.fill+'%;background:'+it.color+'"></div></div>'+
+          '<div class="complexity-val" style="color:'+it.color+'">'+it.val+' <span class="complexity-note">— '+it.note+'</span></div>'+
+          '</div>';
+  });
+  document.getElementById('complexity-display').innerHTML=html;
+}
+
+function renderWhy() {
+  var w=WHY[algo];
+  document.getElementById('why-content').innerHTML=
+    '<div class="why-tag">'+w.tag+'</div>'+
+    '<div class="why-text">'+w.text+'</div>'+
+    '<div class="why-use-case"><div class="why-use-title">'+w.useTitle+'</div>'+w.useText+'</div>';
+}
+
+function toggleWhy() {
+  whyOpen=!whyOpen;
+  document.getElementById('why-body').classList.toggle('open',whyOpen);
+  document.getElementById('why-chevron').classList.toggle('open',whyOpen);
+}
+
+/* ═══════════════════════════════════════════════════════
+   NAVIGATION
+═══════════════════════════════════════════════════════ */
+function stepNext() {
+  if (quizMode && quizPending) return;
+  if (stepIdx<steps.length-1){stepIdx++;renderStep();renderCode();}
+  else stopAuto();
+}
+function stepPrev() {
+  if (stepIdx>0){stepIdx--;renderStep();renderCode();}
+}
+
+/* ═══════════════════════════════════════════════════════
+   AUTO PLAY
+═══════════════════════════════════════════════════════ */
+function toggleAuto(){autoTimer?stopAuto():startAuto();}
+function startAuto() {
+  var btn=document.getElementById('btn-auto');
+  btn.textContent='⏸ Pause'; btn.classList.add('danger'); btn.classList.remove('primary');
+  function tick(){
+    if (stepIdx>=steps.length-1){stopAuto();return;}
+    stepNext();
+    autoTimer=setTimeout(tick, 1050-parseInt(document.getElementById('speed-range').value));
+  }
+  autoTimer=setTimeout(tick, 1050-parseInt(document.getElementById('speed-range').value));
+}
+function stopAuto(){
+  clearTimeout(autoTimer); autoTimer=null;
+  var btn=document.getElementById('btn-auto');
+  btn.textContent='▷ Auto Play'; btn.classList.remove('danger'); btn.classList.add('primary');
+}
+
+/* ═══════════════════════════════════════════════════════
+   CONTROLS
+═══════════════════════════════════════════════════════ */
+function resetAll(){
+  stopAuto(); isReplay=false;
+  document.getElementById('replay-banner').classList.remove('visible');
+  currentArr=makeArray(arraySize);
+  document.getElementById('custom-input').value='';
+  document.getElementById('custom-input').classList.remove('error');
+  buildAndRender();
+}
+
+function applyCustom(){
+  var raw=document.getElementById('custom-input').value;
+  var parsed=raw.split(/[\s,]+/).map(Number).filter(function(n){return !isNaN(n)&&n>0&&n<1000;});
+  if (parsed.length<2){document.getElementById('custom-input').classList.add('error');return;}
+  document.getElementById('custom-input').classList.remove('error');
+  stopAuto(); isReplay=false;
+  document.getElementById('replay-banner').classList.remove('visible');
+  currentArr=parsed; arraySize=parsed.length;
+  document.getElementById('size-range').value=Math.min(20,Math.max(5,arraySize));
+  document.getElementById('size-label').textContent=arraySize;
+  buildAndRender();
+}
+
+function updateSpeed(val){
+  document.getElementById('speed-label').textContent=Math.round(parseInt(val)/100)+'x';
+  if (autoTimer){stopAuto();startAuto();}
+}
+
+function resizeArray(val){
+  arraySize=parseInt(val);
+  document.getElementById('size-label').textContent=val;
+  stopAuto(); isReplay=false;
+  document.getElementById('replay-banner').classList.remove('visible');
+  currentArr=makeArray(arraySize);
+  document.getElementById('custom-input').value='';
+  document.getElementById('custom-input').classList.remove('error');
+  buildAndRender();
+}
+
+/* ═══════════════════════════════════════════════════════
+   QUIZ MODE
+═══════════════════════════════════════════════════════ */
+function toggleQuizMode(){
+  quizMode=!quizMode;
+  var btn=document.getElementById('btn-quiz');
+  if (quizMode){btn.classList.add('quiz-active');btn.textContent='✦ Quiz: ON';hideQuizPanel();}
+  else{btn.classList.remove('quiz-active');btn.textContent='✎ Quiz Mode';hideQuizPanel();}
+  resetQuiz(); buildAndRender();
+}
+function resetQuiz(){quizCorrect=0;quizTotal=0;quizPending=false;updateQuizBadge();hideQuizPanel();}
+function showQuizPrompt(s){
+  var i=s.compare[0],j=s.compare[1],a=s.arr;
+  document.getElementById('quiz-question').innerHTML='Will <b>'+a[i]+'</b> and <b>'+a[j]+'</b> swap?';
+  document.getElementById('quiz-result').className='quiz-result';
+  document.getElementById('quiz-result').textContent='';
+  document.getElementById('quiz-countdown').classList.remove('visible');
+  document.getElementById('quiz-panel').classList.add('visible');
+  document.getElementById('step-desc').innerHTML='<span class="tag quiz">quiz</span>Look at the highlighted bars — will they swap?';
+  quizPending=true;
+  document.getElementById('btn-next').disabled=true;
+  if (autoTimer){clearTimeout(autoTimer);autoTimer=null;quizAutoPlay=true;}
+}
+function hideQuizPanel(){document.getElementById('quiz-panel').classList.remove('visible');quizPending=false;}
+function answerQuiz(userSaidYes){
+  var s=steps[stepIdx],next=steps[stepIdx+1],actuallySwaps=next&&next.tag==='swap';
+  quizTotal++;
+  var correct=(userSaidYes===actuallySwaps);
+  if (correct) quizCorrect++;
+  var r=document.getElementById('quiz-result');
+  if (correct){r.textContent='✓ Correct! '+(actuallySwaps?'They do swap.':'They stay.');r.className='quiz-result correct';}
+  else{r.textContent='✗ Wrong! '+(actuallySwaps?'They actually swap.':'They actually stay.');r.className='quiz-result wrong';}
+  document.getElementById('quiz-score').textContent=quizCorrect+' / '+quizTotal+' correct';
+  updateQuizBadge();
+  quizPending=false;
+  document.getElementById('btn-next').disabled=false;
+  var cdEl=document.getElementById('quiz-countdown'),cdVal=document.getElementById('quiz-countdown-val');
+  cdEl.classList.add('visible'); cdVal.textContent=1;
+  setTimeout(function(){
+    cdEl.classList.remove('visible');
+    if (!quizMode) return;
+    if (quizAutoPlay){quizAutoPlay=false;stepNext();startAuto();}
+    else stepNext();
+  },1000);
+}
+function updateQuizBadge(){
+  var badge=document.getElementById('quiz-badge');
+  badge.textContent=quizCorrect+'/'+quizTotal;
+  badge.classList.toggle('visible',quizMode);
+}
+
+/* ═══════════════════════════════════════════════════════
+   REPLAY
+═══════════════════════════════════════════════════════ */
+function startReplay(){
+  if (!sortCompleted) return;
+  stopAuto(); isReplay=true; stepIdx=0;
+  document.getElementById('replay-banner').classList.add('visible');
+  renderStep(); renderCode();
+  var speed=parseInt(document.getElementById('speed-range').value);
+  var interval=Math.max(80,(1050-speed)/2);
+  function replayTick(){
+    if (stepIdx>=steps.length-1){isReplay=false;document.getElementById('replay-banner').classList.remove('visible');autoTimer=null;return;}
+    stepIdx++;renderStep();renderCode();
+    autoTimer=setTimeout(replayTick,interval);
+  }
+  autoTimer=setTimeout(replayTick,interval);
+}
+
+/* ═══════════════════════════════════════════════════════
+   CONFETTI
+═══════════════════════════════════════════════════════ */
+function launchConfetti(){
+  var canvas=document.getElementById('confetti-canvas');
+  canvas.style.display='block'; canvas.width=window.innerWidth; canvas.height=window.innerHeight;
+  var ctx=canvas.getContext('2d');
+  var particles=[], colors=['#7c6aff','#ff6a9b','#6affcc','#ffb347','#ffffff','#ffdd88'];
+  for (var i=0;i<120;i++) particles.push({x:Math.random()*canvas.width,y:-10-Math.random()*200,r:4+Math.random()*6,color:colors[Math.floor(Math.random()*colors.length)],vx:(Math.random()-0.5)*4,vy:2+Math.random()*4,angle:Math.random()*Math.PI*2,spin:(Math.random()-0.5)*0.15,shape:Math.random()>0.5?'rect':'circle',alpha:1});
+  var frame=0;
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height); frame++;
+    var alive=false;
+    for (var i=0;i<particles.length;i++){
+      var p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.vy+=0.12; p.angle+=p.spin;
+      if (frame>60) p.alpha-=0.015;
+      if (p.alpha<=0) continue; alive=true;
+      ctx.save(); ctx.globalAlpha=Math.max(0,p.alpha); ctx.translate(p.x,p.y); ctx.rotate(p.angle); ctx.fillStyle=p.color;
+      if (p.shape==='rect') ctx.fillRect(-p.r,-p.r/2,p.r*2,p.r);
+      else{ctx.beginPath();ctx.arc(0,0,p.r,0,Math.PI*2);ctx.fill();}
+      ctx.restore();
+    }
+    if (alive) requestAnimationFrame(draw); else canvas.style.display='none';
+  }
+  requestAnimationFrame(draw);
+}
+
+/* ═══════════════════════════════════════════════════════
+   THEME
+═══════════════════════════════════════════════════════ */
+function toggleTheme(){
+  var isLight=document.body.classList.toggle('light');
+  document.getElementById('theme-icon').textContent=isLight?'☀️':'🌙';
+  document.getElementById('theme-label').textContent=isLight?'LIGHT':'DARK';
+}
+
+/* ═══════════════════════════════════════════════════════
+   MULTI-SORT
+═══════════════════════════════════════════════════════ */
+var multiInitialized = false;
+var MULTI_ALGOS = ['bubble','insertion','selection','quick','merge'];
+var MULTI_NAMES = {bubble:'Bubble Sort',insertion:'Insertion Sort',selection:'Selection Sort',quick:'Quick Sort',merge:'Merge Sort'};
+var multiState = {};  // per algo: {steps, idx, timer, done}
+var multiAutoRunning = false;
+var multiArraySize = 10;
+var multiSpeedVal = 500;
+
+function initMulti() {
+  multiInitialized = true;
+  multiReset();
+}
+
+function multiReset() {
+  multiAutoRunning = false;
+  MULTI_ALGOS.forEach(function(a){ if (multiState[a] && multiState[a].timer) clearTimeout(multiState[a].timer); });
+  var arr = makeArray(multiArraySize);
+  var grid = document.getElementById('multi-grid');
+  grid.innerHTML = '';
+  MULTI_ALGOS.forEach(function(a) {
+    var stps = buildSteps(a, arr.slice());
+    multiState[a] = {steps:stps, idx:0, timer:null, done:false};
+    grid.innerHTML += multiCardHTML(a);
+  });
+  MULTI_ALGOS.forEach(function(a){ multiRenderCard(a); });
+  var btn = document.getElementById('multi-play-btn');
+  btn.textContent = '▷ Start All';
+  btn.classList.remove('danger'); btn.classList.add('primary');
+}
+
+function multiCardHTML(a) {
+  return '<div class="multi-card" id="multi-card-'+a+'">'+
+    '<div class="multi-card-title">'+MULTI_NAMES[a]+' <span id="multi-badge-'+a+'"></span></div>'+
+    '<div class="multi-bars" id="multi-bars-'+a+'"></div>'+
+    '<div class="multi-progress"><div class="multi-progress-fill" id="multi-prog-'+a+'" style="width:0%"></div></div>'+
+    '<div class="multi-desc" id="multi-desc-'+a+'">Ready</div>'+
+    '<div class="multi-stats"><div class="multi-stat">Cmp: <b id="multi-cmp-'+a+'">0</b></div><div class="multi-stat">Swp: <b id="multi-swp-'+a+'">0</b></div><div class="multi-stat">Steps: <b id="multi-steps-'+a+'">0/'+multiState[a].steps.length+'</b></div></div>'+
+  '</div>';
+}
+
+function multiRenderCard(a) {
+  var st = multiState[a];
+  var s = st.steps[st.idx];
+  var maxV = Math.max.apply(null, s.arr);
+  var html = '';
+  var extra = s.extra || {};
+  for (var i=0;i<s.arr.length;i++) {
+    var v=s.arr[i], cls='';
+    if (s.sorted.indexOf(i)  !== -1) cls='sorted';
+    if (extra.mergeLeft  && extra.mergeLeft.indexOf(i)  !== -1) cls='merge-left';
+    if (extra.mergeRight && extra.mergeRight.indexOf(i) !== -1) cls='merge-right';
+    if (extra.pivot      && extra.pivot.indexOf(i)      !== -1) cls='pivot';
+    if (s.compare.indexOf(i) !== -1) cls='compare';
+    if (s.swap.indexOf(i)    !== -1) cls='swap';
+    var h = Math.max(8, Math.round((v/maxV)*140));
+    html += '<div class="multi-bar '+cls+'" style="height:'+h+'px"></div>';
+  }
+  document.getElementById('multi-bars-'+a).innerHTML = html;
+
+  var shortDesc = s.desc.replace(/<[^>]+>/g,'').substring(0,60)+(s.desc.length>60?'…':'');
+  document.getElementById('multi-desc-'+a).innerHTML = '<span class="tag '+s.tag+'" style="font-size:9px;padding:1px 5px;">'+s.tag+'</span> '+shortDesc;
+  document.getElementById('multi-cmp-'+a).textContent = s.cmps;
+  document.getElementById('multi-swp-'+a).textContent = s.swps;
+  document.getElementById('multi-steps-'+a).textContent = (st.idx+1)+'/'+st.steps.length;
+
+  var pct = Math.round((st.idx / (st.steps.length-1)) * 100);
+  document.getElementById('multi-prog-'+a).style.width = pct+'%';
+
+  if (st.done) {
+    var badge = document.getElementById('multi-badge-'+a);
+    badge.className='multi-done-badge vis'; badge.textContent='✓ DONE';
+    document.getElementById('multi-card-'+a).style.borderColor = 'rgba(106,255,204,0.4)';
+  }
+}
+
+function multiToggleAuto() {
+  if (multiAutoRunning) {
+    multiAutoRunning = false;
+    MULTI_ALGOS.forEach(function(a){ if (multiState[a].timer){clearTimeout(multiState[a].timer);multiState[a].timer=null;} });
+    var btn=document.getElementById('multi-play-btn');
+    btn.textContent='▷ Start All'; btn.classList.remove('danger'); btn.classList.add('primary');
+  } else {
+    multiAutoRunning = true;
+    var btn=document.getElementById('multi-play-btn');
+    btn.textContent='⏸ Pause'; btn.classList.add('danger'); btn.classList.remove('primary');
+    MULTI_ALGOS.forEach(function(a){ multiStep(a); });
+  }
+}
+
+function multiStep(a) {
+  var st = multiState[a];
+  if (st.done) return;
+  if (st.idx < st.steps.length - 1) {
+    st.idx++;
+    multiRenderCard(a);
+    var interval = Math.max(40, 1050 - multiSpeedVal);
+    st.timer = setTimeout(function(){ if (multiAutoRunning) multiStep(a); }, interval);
+  } else {
+    st.done = true;
+    multiRenderCard(a);
+    // check if all done
+    var allDone = MULTI_ALGOS.every(function(x){ return multiState[x].done; });
+    if (allDone) {
+      multiAutoRunning = false;
+      var btn=document.getElementById('multi-play-btn');
+      btn.textContent='✓ All Done!'; btn.classList.remove('danger','primary');
+      btn.style.background='rgba(106,255,204,0.1)'; btn.style.borderColor='var(--sorted)'; btn.style.color='var(--sorted)';
+      launchConfetti();
+    }
+  }
+}
+
+function updateMultiSpeed(val) {
+  multiSpeedVal = parseInt(val);
+  document.getElementById('multi-speed-label').textContent = Math.round(multiSpeedVal/100)+'x';
+}
+
+function updateMultiSize(val) {
+  multiArraySize = parseInt(val);
+  document.getElementById('multi-size-label').textContent = val;
+  multiReset();
+}
+
+/* ═══════════════════════════════════════════════════════
+   START
+═══════════════════════════════════════════════════════ */
+init();
+</script>
+</body>
+</html>
